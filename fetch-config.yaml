@@ -1,0 +1,18 @@
+sessions:
+  http://nuc/munin:
+    setup:
+      - localdomain/index.html
+    urls:
+      - localdomain/index.html
+      - localdomain/localhost.localdomain/diskstats_iops/index.html
+    max-parallell-requests: 1
+  http://nuc:
+    urls:
+      - ''
+  http://localhost:8080:
+    urls:
+      - 1
+      - 2
+      - 3
+      - 4
+mode: async
