@@ -1,6 +1,8 @@
 import argparse
 import asyncio
 import pprint
+import signal
+import sys
 import time
 
 import aiohttp
@@ -33,6 +35,8 @@ class Fetcher:
     def __init__(self, config, loop):
         self.config = config
         self.loop = loop
+        self.result_queue = asyncio.Queue()
+        self.stop_event = asyncio.Event()
 
     async def run(self):
         if self.config.mode == 'async':
@@ -44,6 +48,10 @@ class Fetcher:
                     results.append(requests.get(f'{prefix}/{url}'))
             return results
 
+    async def shutdown(self, sig):
+        self.stopevent.set()
+        print(f"Shutting down due to signal {sig.name}")
+
     async def fetch_session(self, session_config):
         prefix = session_config['prefix']
         urls = session_config.get('urls', [])
@@ -51,12 +59,19 @@ class Fetcher:
         targets = [f'{prefix}/{url}'for url in urls]
         args = {}
         timings = session_config.get('timings')
+        period = 300
         if timings:
             args['begin'], args['end'] = get_time_span(timings)
+            period = timings.get('period', period)
 
-        async with aiohttp.ClientSession() as session:
-            sem = asyncio.Semaphore(max_connections)
-            return await asyncio.gather(*[self.limited_fetch_url(target, args, session, sem) for target in targets])
+        while not self.stop_event.is_set():
+            async with aiohttp.ClientSession() as session:
+                sem = asyncio.Semaphore(max_connections)
+                results = await asyncio.gather(*[self.limited_fetch_url(target, args, session, sem)
+                                                 for target in targets])
+                await self.result_queue.put(results)
+                await asyncio.sleep(period)
+                print(f'slept {period}s')
 
     async def limited_fetch_url(self, target, args, session, sem):
         async with sem:
@@ -76,12 +91,23 @@ class Fetcher:
 
 
 if __name__ == '__main__':
+    print(sys.platform)
     options = parse_options()
     fileconfig = read_config(options.config_file)
     options.mode = fileconfig.get('mode', 'async')
     options.sessions = fileconfig.get('sessions', [])
     loop = asyncio.get_event_loop()
     fetcher = Fetcher(options, loop)
+
+    if sys.platform != 'win32':
+        signals = [signal.SIGINT, signal.SIGTERM, signal.SIGQUIT]
+        for s in signals:
+            loop.add_signal_handler(s, lambda s=s: asyncio.ensure_future(fetcher.shutdown(s)))
+    else:
+        print("Running in windows, stopping is not implemented")
+        print()
+        print('bah')
+
     res = loop.run_until_complete(fetcher.run())
     pprint.pprint(res)
     loop.close()

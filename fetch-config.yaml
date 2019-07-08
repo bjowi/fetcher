@@ -8,7 +8,7 @@ sessions:
     max-parallel-requests: 1
     timings:
       resolution: 240
-      period: 3600
+      period: 20
       span: 10
   - prefix: http://nuc
     urls:
