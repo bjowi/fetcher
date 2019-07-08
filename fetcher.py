@@ -21,6 +21,14 @@ def read_config(filename):
         return yaml.safe_load(cf)
 
 
+def get_time_span(timings):
+    resolution = timings.get('resolution', 240)
+    span = timings.get('span', 3600) // resolution
+    end = int(time.time() // resolution) * resolution
+    begin = end - (span * resolution)
+    return begin, end
+
+
 class Fetcher:
     def __init__(self, config, loop):
         self.config = config
@@ -28,7 +36,7 @@ class Fetcher:
 
     async def run(self):
         if self.config.mode == 'async':
-            return await asyncio.gather(*[self.fetch_session(p, v) for p, v in self.config.sessions.items()])
+            return await asyncio.gather(*[self.fetch_session(s) for s in self.config.sessions])
         elif self.config.mode == 'requests':
             results = []
             for prefix, urls in self.config.urls.items():
@@ -36,21 +44,28 @@ class Fetcher:
                     results.append(requests.get(f'{prefix}/{url}'))
             return results
 
-    async def fetch_session(self, prefix, session_config):
+    async def fetch_session(self, session_config):
+        prefix = session_config['prefix']
         urls = session_config.get('urls', [])
-        max_connections = session_config.get('max-parallell-requests', 1000)
+        max_connections = session_config.get('max-parallel-requests', 1000)
         targets = [f'{prefix}/{url}'for url in urls]
+        args = {}
+        timings = session_config.get('timings')
+        if timings:
+            args['begin'], args['end'] = get_time_span(timings)
+
         async with aiohttp.ClientSession() as session:
             sem = asyncio.Semaphore(max_connections)
-            return await asyncio.gather(*[self.limited_fetch_url(target, session, sem) for target in targets])
+            return await asyncio.gather(*[self.limited_fetch_url(target, args, session, sem) for target in targets])
 
-    async def limited_fetch_url(self, target, session, sem):
+    async def limited_fetch_url(self, target, args, session, sem):
         async with sem:
-            return await self.fetch_url(target, session)
+            return await self.fetch_url(target, args, session)
 
-    async def fetch_url(self, url, session):
+    async def fetch_url(self, url, args, session):
+        print(args)
         t1 = time.time()
-        async with session.get(url) as response:
+        async with session.get(url, params=args) as response:
             content = await response.text()
             return {
                 'url': url,

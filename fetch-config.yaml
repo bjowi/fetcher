@@ -1,15 +1,19 @@
 sessions:
-  http://nuc/munin:
+  - prefix: http://nuc/munin
     setup:
       - localdomain/index.html
     urls:
       - localdomain/index.html
       - localdomain/localhost.localdomain/diskstats_iops/index.html
-    max-parallell-requests: 1
-  http://nuc:
+    max-parallel-requests: 1
+    timings:
+      resolution: 240
+      period: 3600
+      span: 10
+  - prefix: http://nuc
     urls:
       - ''
-  http://localhost:8080:
+  - prefix: http://localhost:8080
     urls:
       - 1
       - 2
